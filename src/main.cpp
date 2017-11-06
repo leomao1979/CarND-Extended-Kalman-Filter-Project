@@ -45,17 +45,12 @@ int main()
 
     if (length && length > 2 && data[0] == '4' && data[1] == '2')
     {
-
       auto s = hasData(std::string(data));
       if (s != "") {
-      	
         auto j = json::parse(s);
-
         std::string event = j[0].get<std::string>();
-        
         if (event == "telemetry") {
           // j[1] is the data JSON object
-          
           string sensor_measurment = j[1]["sensor_measurement"];
           
           MeasurementPackage meas_package;
@@ -65,7 +60,6 @@ int main()
     	  // reads first element from the current line
     	  string sensor_type;
     	  iss >> sensor_type;
-
     	  if (sensor_type.compare("L") == 0) {
       	  		meas_package.sensor_type_ = MeasurementPackage::LASER;
           		meas_package.raw_measurements_ = VectorXd(2);
@@ -77,7 +71,6 @@ int main()
           		iss >> timestamp;
           		meas_package.timestamp_ = timestamp;
           } else if (sensor_type.compare("R") == 0) {
-
       	  		meas_package.sensor_type_ = MeasurementPackage::RADAR;
           		meas_package.raw_measurements_ = VectorXd(3);
           		float ro;
@@ -136,10 +129,8 @@ int main()
           auto msg = "42[\"estimate_marker\"," + msgJson.dump() + "]";
           // std::cout << msg << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-	  
         }
       } else {
-        
         std::string msg = "42[\"manual\",{}]";
         ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
       }
