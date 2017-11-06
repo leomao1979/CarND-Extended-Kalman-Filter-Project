@@ -1,129 +1,155 @@
 # Extended Kalman Filter Project Starter Code
+[![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
+
 Self-Driving Car Engineer Nanodegree Program
 
-In this project you will utilize a kalman filter to estimate the state of a moving object of interest with noisy lidar and radar measurements. Passing the project requires obtaining RMSE values that are lower that the tolerance outlined in the project rubric. 
+In this project you will utilize a kalman filter to estimate the state of a moving object of interest with noisy lidar and radar measurements. Passing the project requires obtaining RMSE values that are lower that the tolerance outlined in the project rubric.
 
-This project involves the Term 2 Simulator which can be downloaded [here](https://github.com/udacity/self-driving-car-sim/releases)
+[//]: # (Image References)
+[result_dataset1]: images/result_dataset1.png
+[result_dataset2]: images/result_dataset2.png
 
-This repository includes two files that can be used to set up and install [uWebSocketIO](https://github.com/uWebSockets/uWebSockets) for either Linux or Mac systems. For windows you can use either Docker, VMware, or even [Windows 10 Bash on Ubuntu](https://www.howtogeek.com/249966/how-to-install-and-use-the-linux-bash-shell-on-windows-10/) to install uWebSocketIO. Please see [this concept in the classroom](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/16cf4a78-4fc7-49e1-8621-3450ca938b77) for the required version and installation scripts.
+## [Rubric](https://review.udacity.com/#!/rubrics/748/view) Points
 
-Once the install for uWebSocketIO is complete, the main program can be built and run by doing the following from the project top directory.
+### Results
 
-1. mkdir build
-2. cd build
-3. cmake ..
-4. make
-5. ./ExtendedKF
+RMSE with dataset1
 
-Tips for setting up your environment can be found [here](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/23d376c7-0195-4276-bdf0-e02f1f3c665d)
+| Item     | Value       |  
+|:--------:|:-----------:|
+| X        | 0.0973      |
+| Y        | 0.0855      |
+| VX       | 0.4513      |
+| VY       | 0.4399      |
 
-Note that the programs that need to be written to accomplish the project are src/FusionEKF.cpp, src/FusionEKF.h, kalman_filter.cpp, kalman_filter.h, tools.cpp, and tools.h
+![Result of dataset1][result_dataset1]
 
-The program main.cpp has already been filled out, but feel free to modify it.
+RMSE with dataset2
 
-Here is the main protcol that main.cpp uses for uWebSocketIO in communicating with the simulator.
+| Item     | Value       |  
+|:--------:|:-----------:|
+| X        | 0.0726      |
+| Y        | 0.0967      |
+| VX       | 0.4579      |
+| VY       | 0.4966      |
 
+![Result of dataset2][result_dataset2]
 
-INPUT: values provided by the simulator to the c++ program
+### First measurement
+Initialize state vector according to sensor type when receive the first measurement.
+```
+if (measurement_pack.sensor_type_ == MeasurementPackage::RADAR) {
+    // Convert radar from polar to cartesian coordinates and initialize state.
+    ekf_.x_ = tools.ConvertToCartesianCoordinates(measurement_pack.raw_measurements_);
+} else if (measurement_pack.sensor_type_ == MeasurementPackage::LASER) {
+    ekf_.x_ << measurement_pack.raw_measurements_[0], measurement_pack.raw_measurements_[1], 0, 0;
+}
 
-["sensor_measurement"] => the measurement that the simulator observed (either lidar or radar)
+```
 
+Though radar gives velocity data in the form of the range rate rho_dot, a radar measurement does not contain enough information to determine the state variable velocities vx and vy. Use the radar measurements rho and theta to initialize the state variable locations px and py.
 
-OUTPUT: values provided by the c++ program to the simulator
+```
+VectorXd Tools::ConvertToCartesianCoordinates(const VectorXd& x_polar) {
+    VectorXd x(4);
+    float rho     = x_polar(0);
+    float theta   = x_polar(1);
+    // float rho_dot = x_polar(2);
+    float px = rho * cos(theta);
+    float py = rho * sin(theta);
+    x << px, py, 0, 0;
+    return x;
+}
+```
 
-["estimate_x"] <= kalman filter estimated position x
-["estimate_y"] <= kalman filter estimated position y
-["rmse_x"]
-["rmse_y"]
-["rmse_vx"]
-["rmse_vy"]
+### Predict
+1) Update the state transition matrix F according to the new elapsed time.
+```
+// dt - expressed in seconds
+float dt = (measurement_pack.timestamp_ - previous_timestamp_) / 1000000.0;   
+float dt_2 = dt * dt;
+float dt_3 = dt_2 * dt;
+float dt_4 = dt_3 * dt;
 
----
+// Modify the F matrix so that the time is integrated
+ekf_.F_(0, 2) = dt;
+ekf_.F_(1, 3) = dt;
+```
+2) Set the process covariance matrix Q (noise_ax = 9 and noise_ay = 9)
+```
+ekf_.Q_ = MatrixXd(4, 4);
+float noise_ax = 9, noise_ay = 9;
+ekf_.Q_ <<  dt_4/4*noise_ax, 0, dt_3/2*noise_ax, 0,
+            0, dt_4/4*noise_ay, 0, dt_3/2*noise_ay,
+            dt_3/2*noise_ax, 0, dt_2*noise_ax, 0,
+            0, dt_3/2*noise_ay, 0, dt_2*noise_ay;
+```
 
-## Other Important Dependencies
+3) Predict
+```
+x_ = F_ * x_;
+MatrixXd Ft = F_.transpose();
+P_ = F_ * P_ * Ft + Q_;
+```
 
-* cmake >= 3.5
-  * All OSes: [click here for installation instructions](https://cmake.org/install/)
-* make >= 4.1 (Linux, Mac), 3.81 (Windows)
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
-* gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools](https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
+### Update
+1) Update measurement matrix H and measurement covariance matrix R according
+For Laser type:
+```
+ekf_.H_ << 1, 0, 0, 0,
+            0, 1, 0, 0;
 
-## Basic Build Instructions
+ekf_.R_ << 0.0225, 0,
+            0, 0.0225;
+```
 
-1. Clone this repo.
-2. Make a build directory: `mkdir build && cd build`
-3. Compile: `cmake .. && make` 
-   * On windows, you may need to run: `cmake .. -G "Unix Makefiles" && make`
-4. Run it: `./ExtendedKF `
+For Radar type, the function that maps x vector to polar coordinates is non-linear, so use Jacobian matrix:
+```
+ekf_.H_ = tools.CalculateJacobian(ekf_.x_);
+ekf_.R_ << 0.09, 0, 0,
+            0, 0.0009, 0,
+            0, 0, 0.09;
+```
 
-## Editor Settings
+2) Update state vector and state covariance matrix
 
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
+For Laser Type:
+```
+VectorXd z_predict = H_ * x_;
+VectorXd y = z - z_predict;
+MatrixXd Ht = H_.transpose();
+MatrixXd S = H_ * P_ * Ht + R_;
+MatrixXd Si = S.inverse();
+MatrixXd K = P_ * Ht * Si;
 
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
+//new estimate
+x_ = x_ + (K * y);
+long x_size = x_.size();
+MatrixXd I = MatrixXd::Identity(x_size, x_size);
+P_ = (I - K * H_) * P_;
+```
 
-## Code Style
+For Radar type:
+```
+Tools tools;
+VectorXd z_predict = tools.ConvertToPolarCoordinates(x_);
+VectorXd y = z - z_predict;
+// normalize angel
+while (y(1) > PI) {
+    y(1) -= 2 * PI;
+}
+while(y(1) < -PI) {
+    y(1) += 2 * PI;
+}
 
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
+MatrixXd Ht = H_.transpose();
+MatrixXd S = H_ * P_ * Ht + R_;
+MatrixXd Si = S.inverse();
+MatrixXd K = P_ * Ht * Si;
 
-## Generating Additional Data
-
-This is optional!
-
-If you'd like to generate your own radar and lidar data, see the
-[utilities repo](https://github.com/udacity/CarND-Mercedes-SF-Utilities) for
-Matlab scripts that can generate additional data.
-
-## Project Instructions and Rubric
-
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
-
-More information is only accessible by people who are already enrolled in Term 2
-of CarND. If you are enrolled, see [the project resources page](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/382ebfd6-1d55-4487-84a5-b6a5a4ba1e47)
-for instructions and the project rubric.
-
-## Hints and Tips!
-
-* You don't have to follow this directory structure, but if you do, your work
-  will span all of the .cpp files here. Keep an eye out for TODOs.
-* Students have reported rapid expansion of log files when using the term 2 simulator.  This appears to be associated with not being connected to uWebSockets.  If this does occur,  please make sure you are conneted to uWebSockets. The following workaround may also be effective at preventing large log files.
-
-    + create an empty log file
-    + remove write permissions so that the simulator can't write to log
- * Please note that the ```Eigen``` library does not initialize ```VectorXd``` or ```MatrixXd``` objects with zeros upon creation.
-
-## Call for IDE Profiles Pull Requests
-
-Help your fellow students!
-
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to we ensure
-that students don't feel pressured to use one IDE or another.
-
-However! We'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
-
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
-
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
-
-Regardless of the IDE used, every submitted project must
-still be compilable with cmake and make.
-
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
-
+// New estimate
+x_ = x_ + (K * y);
+long x_size = x_.size();
+MatrixXd I = MatrixXd::Identity(x_size, x_size);
+P_ = (I - K * H_) * P_;
+```
